@@ -52,6 +52,53 @@ chunk_size_reading = 100000000  # reads by chunk of 100Mb, can be tuned for best
 _VLSDStruct = Struct('I')
 
 
+# indexer extension
+from numpy import uint8 as indexer_uint8
+
+
+class Indexer:
+    def __init__(self):
+        self.pos = []
+        self.channel_name = ""
+        # Dict<ch_name: str. [(pos: int, size: int)]
+        # pos - position in file
+        # size - size of chunk
+        self.offsets = dict()
+        # Dict<ch_name: str, type: dtype>
+        self.dtypes = dict()
+        self.dl_offset = -1
+        self.enable = False
+
+    def add(self, name: str, dtype_char: str, pos_start: int, pos_end: int):
+        if not self.enable:
+            return
+
+        if self.dl_offset == -1:
+            raise RuntimeError("attempt adding index before 'dl_offset' initialized")
+
+        if name not in self.offsets.keys():
+            self.offsets[name] = []
+            self.dtypes[name] = dtype_char
+
+        self.offsets[name].append((self.dl_offset + pos_start, pos_end - pos_start))
+
+
+indexer = Indexer()
+
+
+def indexer_get_index():
+    return indexer.dtypes, indexer.offsets
+
+
+def indexer_enable():
+    indexer.enable=True
+
+
+def indexer_disable():
+    indexer.enable=False
+# indexer extension end
+
+
 def _data_block(record, info, parent_block, channel_set=None, n_records=None, sorted_flag=True, vlsd=None):
     """ converts raw data into arrays
 
@@ -197,6 +244,10 @@ def _read_unsorted(record, info, parent_block, record_id_size):
             for channel_name in channel_name_set[record_id]:  # list of channel classes from channelSet
                 buf[channel_name][index[record_id]] = \
                     parent_block['data'][position + pos_byte_beg[channel_name]:position + pos_byte_end[channel_name]]
+                # indexer extension
+                if channel_name not in VLSD.keys():
+                    indexer.add(channel_name, buf[channel_name].dtype, position + pos_byte_beg[channel_name], position + pos_byte_end[channel_name])
+                # indexer extension end
             index[record_id] += 1
             position += CGrecordLength[record_id]
         else:  # VLSD CG
@@ -214,6 +265,9 @@ def _read_unsorted(record, info, parent_block, record_id_size):
             elif signal_data_type == 9:
                 temp = temp.decode('>utf-16')
             VLSD[VLSD_CG_name[record_id]].append(temp)
+            # indexer extension
+            indexer.add(VLSD_CG_name[record_id], indexer_uint8, position, position + VLSDLen - 1)
+            # indexer extension end
             position += VLSDLen
     # changing from bytes type to desired type
     if buf:
@@ -454,6 +508,9 @@ class Data(dict):
                             # read fist data blocks linked by DLBlock to identify data block type
                             data_block.update(_load_header(self.fid, pointer))
                             if data_block['id'] in (b'##SD', b'##DT', '##SD', '##DT'):
+                                # indexer extension
+                                indexer.dl_offset = self.fid.tell()
+                                # indexer extension end
                                 data_block['data'].extend(self.fid.read(data_block['length'] - 24))
                                 data_block_length += data_block['length'] - 24
                             elif data_block['id'] in (b'##DZ', '##DZ'):
