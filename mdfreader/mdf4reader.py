@@ -254,7 +254,7 @@ def _read_unsorted(record, info, parent_block, record_id_size):
             position += record_id_size
             (VLSDLen,) = _VLSDStruct.unpack(parent_block['data'][position:position + 4])  # VLSD length
             position += 4
-            temp = parent_block['data'][position:position + VLSDLen - 1]
+            temp = parent_block['data'][position:position + VLSDLen]
             signal_data_type = VLSD_CG_signal_data_type[record_id]
             if signal_data_type == 6:
                 temp = temp.decode('ISO8859')
@@ -266,7 +266,7 @@ def _read_unsorted(record, info, parent_block, record_id_size):
                 temp = temp.decode('>utf-16')
             VLSD[VLSD_CG_name[record_id]].append(temp)
             # indexer extension
-            indexer.add(VLSD_CG_name[record_id], indexer_uint8, position, position + VLSDLen - 1)
+            indexer.add(VLSD_CG_name[record_id], indexer_uint8, position, position + VLSDLen)
             # indexer extension end
             position += VLSDLen
     # changing from bytes type to desired type
